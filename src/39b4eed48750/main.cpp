@@ -82,10 +82,10 @@ powerstep01_init_u_t init =
   POWERSTEP01_TDT_125ns, // Duration of the dead time via enum powerstep01_Tdt_t
   },
   /* current mode parameters */
-  32.12, // Hold torque in mV, range from 7.8mV to 1000 mV
-  32.12, // Running torque in mV, range from 7.8mV to 1000 mV 
-  32.12, // Acceleration torque in mV, range from 7.8mV to 1000 mV
-  32.12, // Deceleration torque in mV, range from 7.8mV to 1000 mV
+  328.12, // Hold torque in mV, range from 7.8mV to 1000 mV
+  328.12, // Running torque in mV, range from 7.8mV to 1000 mV 
+  328.12, // Acceleration torque in mV, range from 7.8mV to 1000 mV
+  328.12, // Deceleration torque in mV, range from 7.8mV to 1000 mV
   POWERSTEP01_TOFF_FAST_8us, //Maximum fast decay time , enum powerstep01_ToffFast_t 
   POWERSTEP01_FAST_STEP_12us, //Maximum fall step time , enum powerstep01_FastStep_t 
   3.0, // Minimum on-time in us, range 0.5us to 64us
@@ -271,9 +271,8 @@ int main()
 
     /* Waiting while the motor is active. */
     motor->wait_while_active();
-
     
-  /* Wait for 2 seconds */
+    
   wait_ms(2000);
 
     /* Request device to go position 6400 */
@@ -281,9 +280,7 @@ int main()
  
     /* Waiting while the motor is active. */
     motor->wait_while_active();
-
     
-  /* Wait for 2 seconds */
   wait_ms(2000);
   } 
 }
