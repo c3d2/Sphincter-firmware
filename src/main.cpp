@@ -1,43 +1,3 @@
-/**
- ******************************************************************************
- * @file    main.cpp
- * @author  IPC Rennes
- * @version V1.0.0
- * @date    April 13th, 2016
- * @brief   mbed simple application for the STMicroelectronics X-NUCLEO-IHM03A1
- *          Motor Control Expansion Board: control of 1 motor.
- ******************************************************************************
- * @attention
- *
- * <h2><center>&copy; COPYRIGHT(c) 2016 STMicroelectronics</center></h2>
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *   1. Redistributions of source code must retain the above copyright notice,
- *      this list of conditions and the following disclaimer.
- *   2. Redistributions in binary form must reproduce the above copyright notice,
- *      this list of conditions and the following disclaimer in the documentation
- *      and/or other materials provided with the distribution.
- *   3. Neither the name of STMicroelectronics nor the names of its contributors
- *      may be used to endorse or promote products derived from this software
- *      without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- ******************************************************************************
- */
-
-/* Includes ------------------------------------------------------------------*/
-
 /* mbed specific header files. */
 #include "mbed.h"
 
@@ -48,7 +8,16 @@
 #include "PowerStep01.h"
 
 
+#include <EthernetInterface.h>
+
 Serial pc(USBTX, USBRX, 115200);
+
+DigitalOut red(LED3);
+DigitalOut green(LED1);
+DigitalOut blue(LED2);
+
+
+uint8_t recvBuffer[1500 + 1];
 
 /* Variables -----------------------------------------------------------------*/
 
@@ -134,6 +103,8 @@ void wait_while_active() {
     if (has_flag) {
       my_flag_irq_handler();
       has_flag = false;
+      
+      motor->fetch_and_clear_all_status();
       return;
     }
 
@@ -180,10 +151,41 @@ void close_door()
   motor->soft_hiz();
 }
 
+/* Network ----------------------------------------------------------------------*/
+
+EthernetInterface eth;
+UDPSocket socket;
+  
+void network_init() {
+  
+  red = 0; blue = 1; green = 0;
+
+  int ret = eth.connect();
+
+  if (ret == 0) {
+    red = 0; blue = 0; green = 1;     
+    printf("Got IP Address: %s\n", eth.get_ip_address());
+  } else {
+    printf("Error acquiring IP: %d\n", ret);
+    while (1) { 
+        red = 1; blue = 0; green = 0;
+        wait(0.4);
+
+        red = 0; blue = 0; green = 0;
+        wait(0.4);
+    }
+  }
+
+  socket.open(&eth);
+  socket.bind(1337);
+}
+
 /* Main ----------------------------------------------------------------------*/
 
 int main()
 {
+
+  
 //----- Initialization 
   /* Initializing SPI bus. */
   DevSPI dev_spi(D11, D12, D13);
@@ -215,14 +217,57 @@ int main()
 
 
   /* Infinite Loop. */
-  printf("--> Infinite Loop...\r\n");
-  while (true) {
-    open_door();
-    wait_ms(2000);
+  //printf("--> Infinite Loop...\r\n");
+  //while (true) {
+    //open_door();
+    //wait_ms(2000);
 
-    close_door();
-    wait_ms(1000);
-    printf("status=%x\n", motor->read_status_register());
+    //close_door();
+    //wait_ms(1000);
+    //printf("status=%x\n", motor->read_status_register());
  
-  } 
+  //}
+
+  network_init();
+
+
+  while (1) {
+    SocketAddress address;
+    int recvSize = socket.recvfrom(&address, recvBuffer, 1500);
+
+    if (recvSize < 0) {
+        printf("UDP receive error: %d\n", recvSize);
+        red = 1;
+    } else if (recvSize > 0) {
+        printf("UDP received packet of size: %d\n", recvSize);
+        recvBuffer[recvSize] = 0;
+      if (strstr((char*)recvBuffer, "open")) {
+        blue = 1;
+        green = 1;
+        wait(0.3);
+        green = 0;
+        wait(0.3);
+        green = 1;
+        wait(0.3);
+        blue = 0;
+        open_door();
+      } else if (strstr((char*)recvBuffer, "close")) {
+        blue = 1;
+        red = 1;
+        wait(0.3);
+        red = 0;
+        wait(0.3);
+        red = 1;
+        wait(0.3);
+        blue = 0;
+        red = 0;
+        close_door();
+      }
+    }
+    
+    blue = !blue;
+    wait(0.2);
+
+    red = 0;
+  }
 }
