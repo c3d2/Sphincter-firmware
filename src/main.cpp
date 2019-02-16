@@ -47,59 +47,11 @@
 /* Component specific header files. */
 #include "PowerStep01.h"
 
+
+Serial pc(USBTX, USBRX, 115200);
+
 /* Variables -----------------------------------------------------------------*/
 
-/* Initialization parameters of the motor connected to the expansion board. */
-/* Current mode. */
-powerstep01_init_u_t init =
-{
- .cm = {
-  .cp = {
-  /* common parameters */
-  /* .cmVmSelection = */ POWERSTEP01_CM_VM_CURRENT, // enum powerstep01_CmVm_t
-  582, // Acceleration rate in step/s2, range 14.55 to 59590 steps/s^2
-  582, // Deceleration rate in step/s2, range 14.55 to 59590 steps/s^2
-  488, // Maximum speed in step/s, range 15.25 to 15610 steps/s
-  0, // Minimum speed in step/s, range 0 to 976.3 steps/s
-  POWERSTEP01_LSPD_OPT_OFF, // Low speed optimization bit, enum powerstep01_LspdOpt_t
-  244.16, // Full step speed in step/s, range 7.63 to 15625 steps/s
-  POWERSTEP01_BOOST_MODE_OFF, // Boost of the amplitude square wave, enum powerstep01_BoostMode_t
-  281.25, // Overcurrent threshold settings via enum powerstep01_OcdTh_t
-  STEP_MODE_1_16, // Step mode settings via enum motorStepMode_t
-  POWERSTEP01_SYNC_SEL_DISABLED, // Synch. Mode settings via enum powerstep01_SyncSel_t
-  (POWERSTEP01_ALARM_EN_OVERCURRENT|
-   POWERSTEP01_ALARM_EN_THERMAL_SHUTDOWN|
-   POWERSTEP01_ALARM_EN_THERMAL_WARNING|
-   POWERSTEP01_ALARM_EN_UVLO|
-   POWERSTEP01_ALARM_EN_STALL_DETECTION|
-   POWERSTEP01_ALARM_EN_SW_TURN_ON|
-   POWERSTEP01_ALARM_EN_WRONG_NPERF_CMD), // Alarm settings via bitmap enum powerstep01_AlarmEn_t
-  POWERSTEP01_IGATE_64mA, // Gate sink/source current via enum powerstep01_Igate_t 
-  POWERSTEP01_TBOOST_0ns, // Duration of the overboost phase during gate turn-off via enum powerstep01_Tboost_t
-  POWERSTEP01_TCC_500ns, // Controlled current time via enum powerstep01_Tcc_t
-  POWERSTEP01_WD_EN_DISABLE, // External clock watchdog, enum powerstep01_WdEn_t  
-  POWERSTEP01_TBLANK_375ns, // Duration of the blanking time via enum powerstep01_TBlank_t
-  POWERSTEP01_TDT_125ns, // Duration of the dead time via enum powerstep01_Tdt_t
-  },
-  /* current mode parameters */
-  328.12, // Hold torque in mV, range from 7.8mV to 1000 mV
-  328.12, // Running torque in mV, range from 7.8mV to 1000 mV 
-  328.12, // Acceleration torque in mV, range from 7.8mV to 1000 mV
-  328.12, // Deceleration torque in mV, range from 7.8mV to 1000 mV
-  POWERSTEP01_TOFF_FAST_8us, //Maximum fast decay time , enum powerstep01_ToffFast_t 
-  POWERSTEP01_FAST_STEP_12us, //Maximum fall step time , enum powerstep01_FastStep_t 
-  3.0, // Minimum on-time in us, range 0.5us to 64us
-  21.0, // Minimum off-time in us, range 0.5us to 64us 
-  POWERSTEP01_CONFIG_INT_16MHZ_OSCOUT_2MHZ, // Clock setting , enum powerstep01_ConfigOscMgmt_t
-  POWERSTEP01_CONFIG_SW_HARD_STOP, // External switch hard stop interrupt mode, enum powerstep01_ConfigSwMode_t
-  POWERSTEP01_CONFIG_TQ_REG_TVAL_USED, // External torque regulation enabling , enum powerstep01_ConfigEnTqReg_t
-  POWERSTEP01_CONFIG_VS_COMP_DISABLE, // Motor Supply Voltage Compensation enabling , enum powerstep01_ConfigEnVscomp_t 
-  POWERSTEP01_CONFIG_OC_SD_DISABLE, // Over current shutwdown enabling, enum powerstep01_ConfigOcSd_t
-  POWERSTEP01_CONFIG_UVLOVAL_LOW, // UVLO Threshold via powerstep01_ConfigUvLoVal_t
-  POWERSTEP01_CONFIG_VCCVAL_15V, // VCC Val, enum powerstep01_ConfigVccVal_t
-  POWERSTEP01_CONFIG_TSW_048us, // Switching period, enum powerstep01_ConfigTsw_t
-  POWERSTEP01_CONFIG_PRED_DISABLE // Predictive current enabling , enum powerstep01_ConfigPredEn_t 
-}};
 
 /* Motor Control Component. */
 PowerStep01 *motor;
@@ -171,29 +123,80 @@ void my_error_handler(uint16_t error)
   }    
 }
 
+volatile bool has_flag;
+void my_set_flag()  {
+    has_flag = true;
+}
+
+// pur own busy waiting that only polls irq flag...
+void wait_while_active() {
+  while (motor->is_device_busy()) {
+    if (has_flag) {
+      my_flag_irq_handler();
+      has_flag = false;
+      return;
+    }
+
+    wait(0.1);
+  }
+}
+
+void open_door()
+{
+  
+    // Target position. This will be our timeout/fallback
+//----- move of 16000 steps in the FW direction
+  printf("--> Moving forward 16000 steps.\r\n");
+  motor->move(StepperMotor::FWD, 192000);
+    /* Waiting while the motor is active. */
+    wait_while_active();
+    motor->move(StepperMotor::BWD, 13000);
+    
+    wait_while_active();
+
+  // Move back by quarter rotation
+    
+//----- Soft stopped required while running
+  printf("--> Soft stop requested.\r\n");
+ 
+  /* Request a soft stop of device and keep the power bridges enabled */
+  motor->soft_hiz();
+}
+
+void close_door()
+{
+//----- run the motor BACKWARD at 400 step/s
+  printf("--> run the motor backward at 400 step/s.\r\n");
+  motor->move(StepperMotor::BWD,205000);
+
+  
+    /* Waiting while the motor is active. */
+    wait_while_active();
+  
+//----- Soft stopped required while running
+  printf("--> Soft stop requested.\r\n");
+ 
+  /* Request a soft stop of device and keep the power bridges enabled */
+  motor->soft_hiz();
+}
+
 /* Main ----------------------------------------------------------------------*/
 
 int main()
 {
-  /* Printing to the console. */
-  printf("STARTING MAIN PROGRAM\r\n");
-  printf("    Reminder:\r\n");
-  printf("    The position unit is in agreement to the step mode.\r\n");
-  printf("    The speed, acceleration or deceleration unit\r\n");
-  printf("    do not depend on the step mode and the step unit is a full step.\r\n");
-    
 //----- Initialization 
   /* Initializing SPI bus. */
   DevSPI dev_spi(D11, D12, D13);
-
   /* Initializing Motor Control Component. */
   motor = new PowerStep01(D2, D4, D8, D9, D10, dev_spi);
-  if (motor->init(&init) != COMPONENT_OK) {
+  
+  if (motor->init(0) != COMPONENT_OK) {
     exit(EXIT_FAILURE);
   }
 
   /* Attaching and enabling an interrupt handler. */
-  motor->attach_flag_irq(&my_flag_irq_handler);
+  //motor->attach_flag_irq(&my_flag_irq_handler);
+  motor->attach_flag_irq(&my_set_flag);
   motor->enable_flag_irq();
     
   /* Attaching an error handler */
@@ -202,86 +205,24 @@ int main()
   /* Printing to the console. */
   printf("Motor Control Application Example for 1 Motor\r\n");
 
-//----- move of 16000 steps in the FW direction
-  printf("--> Moving forward 16000 steps.\r\n");
-  motor->move(StepperMotor::FWD, 16000);
-
-  /* Waiting while the motor is active. */
-  motor->wait_while_active();
-
-  /* Wait for 2 seconds */  
-  wait_ms(2000);
-
-//----- Go to position -6400
-  printf("--> Go to position -6400 steps.\r\n");
-
-  /* Request device to go to position -6400 */
-  motor->go_to(-6400);
-  
-  /* Wait for the motor ends moving */
-  motor->wait_while_active();
-
-  /* Get current position of device and print to the console */
-  printf("    Position: %d.\r\n", motor->get_position());
-  
-  /* Wait for 2 seconds */  
-  wait_ms(2000);
-
-//----- Go Home
-  /* Printing to the console. */
-  printf("--> Go to home position.\r\n");
-  
-  /* Request device to go to Home */
-  motor->go_home();
-  
-  /* Wait for the motor ends moving */
-  motor->wait_while_active();
-  
-  /* Wait for 2 seconds */
-  wait_ms(2000);
-
-//----- run the motor BACKWARD at 400 step/s
-  printf("--> run the motor backward at 400 step/s.\r\n");
-  motor->run(StepperMotor::BWD,400);
 
 //----- Get parameter example   
   /* Wait for device reaches the targeted speed */
-  while ((motor->read_status_register() & POWERSTEP01_STATUS_MOT_STATUS) != POWERSTEP01_STATUS_MOT_STATUS_CONST_SPD);
+  //while ((motor->read_status_register() & POWERSTEP01_STATUS_MOT_STATUS) != POWERSTEP01_STATUS_MOT_STATUS_CONST_SPD);
  
   /* Record the reached speed in step/s and print to the console */
-  printf("    Reached Speed: %f step/s.\r\n", motor->get_analog_value(POWERSTEP01_SPEED));
+  //printf("    Reached Speed: %f step/s.\r\n", motor->get_analog_value(POWERSTEP01_SPEED));
 
-//----- Soft stopped required while running
-  printf("--> Soft stop requested.\r\n");
- 
-  /* Request a soft stop of device and keep the power bridges enabled */
-  motor->soft_hiz();
-
-  /* Wait for the motor of device ends moving */  
-  motor->wait_while_active();
-
-  /* Wait for 2 seconds */
-  wait_ms(2000);
 
   /* Infinite Loop. */
   printf("--> Infinite Loop...\r\n");
   while (true) {
-    /* Request device to go position -6400 */
-    motor->go_to(-6400);
+    open_door();
+    wait_ms(2000);
 
-    /* Waiting while the motor is active. */
-    motor->wait_while_active();
-    
-    
-  wait_ms(2000);
-
-    /* Request device to go position 6400 */
-    motor->go_to(6400);
+    close_door();
+    wait_ms(1000);
+    printf("status=%x\n", motor->read_status_register());
  
-    /* Waiting while the motor is active. */
-    motor->wait_while_active();
-    
-  wait_ms(2000);
   } 
 }
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
