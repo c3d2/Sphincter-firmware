@@ -1380,7 +1380,8 @@ protected:
      */
     void Powerstep01_Board_DisableIrq(void)
     {
-        __disable_irq();
+        /// Dont to that in RTOS mode
+        //__disable_irq();
     }
 
     /**
